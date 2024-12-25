@@ -14,8 +14,8 @@ import os
 
 from tensorboardX import SummaryWriter
 
-from PIL import Image
-import torchvision.transforms as transforms
+# from PIL import Image
+# import torchvision.transforms as transforms
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
@@ -194,6 +194,10 @@ def plotImage(G_losses, D_losses):
     plt.title("Fake Images")
     plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
     plt.show()
+    
+    writer = SummaryWriter('runs/exp-1')
+    writer.add_image('final', img_list[-1], 1)
+    writer.close()
 
 
 ## generateImg
