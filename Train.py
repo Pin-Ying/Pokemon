@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import random
+import random, datetime
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
@@ -14,27 +14,28 @@ import os
 
 from tensorboardX import SummaryWriter
 
-# from PIL import Image
-# import torchvision.transforms as transforms
-
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # CUDA
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 # print('GPU State:', device)
 
+now=datetime.datetime.now().strftime("%Y_%m_%d-%H-%M")
 
-# Random seed
-manualSeed = 7777
-# print('Random Seed:', manualSeed)
-random.seed(manualSeed)
-torch.manual_seed(manualSeed)
+
+# # Random seed
+# manualSeed = 7777
+# # print('Random Seed:', manualSeed)
+# random.seed(manualSeed)
+# torch.manual_seed(manualSeed)
 
 # Attributes
 dataroot = r'datas/'
 
 batch_size = 5
 image_size = 64
+
+# 以下模型建立後不要亂改
 G_out_D_in = 3
 G_in = 100
 G_hidden = 64
@@ -72,18 +73,23 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 # Train
-def train():
-    writer = SummaryWriter('runs/exp-1')
-    
-    # Create the generator
-    netG = Generator(G_in, G_hidden, G_out_D_in).to(device)
-    netG.apply(weights_init)
-    print(netG)
+def train(isRepeat=False):
+    ### 決定要用舊的還是產生新的模型
+    if os.path.isfile('netG.pkl') and isRepeat:
+        netG = torch.load("netG.pkl", map_location='cpu',weights_only=False)
+    else:
+        # Create the generator
+        netG = Generator(G_in, G_hidden, G_out_D_in).to(device)
+        netG.apply(weights_init)
+        print(netG)
 
-    # Create the discriminator
-    netD = Discriminator(G_out_D_in, D_hidden).to(device)
-    netD.apply(weights_init)
-    print(netD)
+    if os.path.isfile('netD.pkl') and isRepeat:
+        netD = torch.load("netD.pkl", map_location='cpu',weights_only=False)
+    else:
+        # Create the discriminator
+        netD = Discriminator(G_out_D_in, D_hidden).to(device)
+        netD.apply(weights_init)
+        print(netD)
 
     # Loss fuG_out_D_intion
     criterion = nn.BCELoss()
@@ -99,7 +105,10 @@ def train():
     print('Start!')
 
     for epoch in range(epochs):
+        writer = SummaryWriter(f'runs/exp-{now}/run-{epoch}')
+
         for i, data in enumerate(dataLoader, 0):
+            
             # Update D network
             netD.zero_grad()
             real_cpu = data[0].to(device)
@@ -111,21 +120,17 @@ def train():
             errD_real.backward()
             D_x = output.mean().item()
             
-            
-            fake=''
+            # 如果抓到有前一次的 fake ，用前一次的 fake 當 noise
+            # fake=''
+            # noise = fake if fake!='' else torch.randn(b_size, G_in, 1, 1, device=device)
             noise = torch.randn(b_size, G_in, 1, 1, device=device)
-            if fake!='':
-                noise = fake
             fake = netG(noise)
             label.fill_(fake_label)
             output = netD(fake.detach()).view(-1)
             
-            # transform = transforms.Compose([
-            #     transforms.PILToTensor()
-            # ])
-            # image = transform(fake)
             image_list = fake.unbind(dim=0)
-            writer.add_image('fake', image_list[0], i)
+            for j, img in enumerate(image_list,0):
+                writer.add_image('fake', image_list[j], batch_size*i+j)
 
             errD_fake = criterion(output, label)
             errD_fake.backward()
@@ -159,10 +164,11 @@ def train():
                 img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
 
             iters += 1
+        writer.close()
 
     torch.save(netD, 'netD.pkl')
     torch.save(netG, 'netG.pkl')
-    writer.close()
+    
 
     return G_losses, D_losses
 
@@ -195,25 +201,25 @@ def plotImage(G_losses, D_losses):
     plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
     plt.show()
     
-    writer = SummaryWriter('runs/exp-1')
+    writer = SummaryWriter(f'runs/exp-{now}')
     writer.add_image('final', img_list[-1], 1)
     writer.close()
 
 
-## generateImg
-# def generateImg():
-#     model = torch.load("netG.pkl", map_location='cpu',weights_only=False)
-#     model.eval()
+# generateImg
+def generateImg():
+    model = torch.load("netG.pkl", map_location='cpu',weights_only=False)
+    model.eval()
 
-#     fixed_noise = torch.randn(64, G_in, 1, 1, device=device)
-#     fake = model(fixed_noise).detach().cpu()
-#     img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
-#     plt.title("Fake Images")
-#     plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
-#     plt.show()
+    fixed_noise = torch.randn(64, G_in, 1, 1, device=device)
+    fake = model(fixed_noise).detach().cpu()
+    img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
+    plt.title("Fake Images")
+    plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
+    plt.show()
 
 
-train()
+train(True)
 plotImage(G_losses, D_losses)
 # generateImg()
 
